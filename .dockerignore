@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+Dockerfile
+docker-compose*.yml
+.git
+.github
+.vscode
+.env
+data/*.db
+data/*.db-wal
+data/*.db-shm
+tests
+coverage
+README.md
