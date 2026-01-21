@@ -12,6 +12,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Debug secret presence (safe)
+        run: |
+          [ -z "${{ secrets.EC2_HOST }}" ] && echo "EC2_HOST EMPTY" || echo "EC2_HOST OK"
+          [ -z "${{ secrets.EC2_USER }}" ] && echo "EC2_USER EMPTY" || echo "EC2_USER OK"
+          [ -z "${{ secrets.EC2_SSH_KEY }}" ] && echo "EC2_SSH_KEY EMPTY" || echo "EC2_SSH_KEY OK"
+
       - name: SSH and deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
