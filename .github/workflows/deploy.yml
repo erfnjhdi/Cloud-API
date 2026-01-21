@@ -30,7 +30,7 @@ jobs:
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy Cloud-API from GitHub Actions" \
-            --parameters '{"commands":["sudo -u ubuntu bash -lc \"cd /opt/cloud-tasks-api && git pull && docker compose up -d --build && docker image prune -f\""]}' \
+            --parameters '{"commands":["sudo -u ubuntu bash -lc \"cd /opt/cloud-tasks-api && git fetch --all && git reset --hard origin/main && docker compose up -d --build && docker image prune -f\""]}' \
             --query "Command.CommandId" --output text)
       
           echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
