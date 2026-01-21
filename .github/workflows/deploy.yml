@@ -1,4 +1,4 @@
-name: Deploy to EC2
+name: Deploy to EC2 via SSM
 
 on:
   push:
@@ -8,26 +8,50 @@ concurrency:
   group: deploy-main
   cancel-in-progress: true
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Debug secret presence (safe)
-        run: |
-          [ -z "${{ secrets.EC2_HOST }}" ] && echo "EC2_HOST EMPTY" || echo "EC2_HOST OK"
-          [ -z "${{ secrets.EC2_USER }}" ] && echo "EC2_USER EMPTY" || echo "EC2_USER OK"
-          [ -z "${{ secrets.EC2_SSH_KEY }}" ] && echo "EC2_SSH_KEY EMPTY" || echo "EC2_SSH_KEY OK"
-
-      - name: SSH and deploy
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script: |
-            set -e
-            cd /opt/cloud-tasks-api
-            git pull
-            docker compose up -d --build
-            docker image prune -f
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Send deploy command (SSM)
+        id: send
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy Cloud-API from GitHub Actions" \
+            --parameters commands="sudo -u ubuntu bash -lc 'cd /opt/cloud-tasks-api && git pull && docker compose up -d --build && docker image prune -f'" \
+            --query "Command.CommandId" --output text)
+          echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM CommandId: $COMMAND_ID"
+
+      - name: Wait for command completion
+        run: |
+          set -e
+          for i in {1..60}; do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${{ steps.send.outputs.command_id }}" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query "Status" --output text || true)
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "Success" ]; then exit 0; fi
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              aws ssm get-command-invocation \
+                --command-id "${{ steps.send.outputs.command_id }}" \
+                --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+                --query "StandardErrorContent" --output text
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "SSM command did not complete in time"
+          exit 1
